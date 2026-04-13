@@ -32,7 +32,7 @@
     </div>
 
     <!-- 部署提示字卡 -->
-    <div id="deploy-msg" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/70 text-white px-4 py-2 rounded-full font-bold animate-bounce pointer-events-none z-10 hidden">
+    <div id="deploy-msg" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/80 text-white px-5 py-2 rounded-full font-bold animate-bounce pointer-events-none z-10 shadow-lg text-sm hidden">
       點擊己方半場部署
     </div>
 
@@ -140,7 +140,7 @@
     appId: "1:83908803774:web:ed6f37736175d1469d32ef"
     };
 
-    // 如果在測試環境中有注入設定，則優先使用 (方便在 AI 預覽視窗直接跑)
+    // 如果在測試環境中有注入設定，則優先使用
     const finalConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? JSON.parse(__firebase_config) : firebaseConfig;
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'royal-clash-pvp-v1';
 
@@ -152,7 +152,7 @@
       signInAnonymously(auth);
       onAuthStateChanged(auth, user => { currentUser = user; });
     } catch (e) {
-      console.warn("Firebase 未設定，僅能使用單機模式。請在原始碼中填入 firebaseConfig。");
+      console.warn("Firebase 未設定，僅能使用單機模式。");
     }
 
     // --- 遊戲常數與狀態 ---
@@ -369,7 +369,7 @@
     function updateElixirBar() {
       els.elixirFill.style.width = `${(Math.floor(state.elixir) / 10) * 100}%`;
       els.elixirText.innerText = `聖水: ${Math.floor(state.elixir)} / 10`;
-      renderCards(); // Refresh disabled states
+      renderCards(); 
     }
 
     function renderCards() {
@@ -381,7 +381,7 @@
         div.className = `flex-1 bg-slate-200 rounded-lg relative flex flex-col items-center justify-center cursor-pointer transition-transform touch-none select-none ${!canAfford ? 'opacity-50 grayscale' : 'hover:-translate-y-1 border-b-4 border-slate-400'} ${isSel ? 'border-4 border-yellow-400 bg-white -translate-y-2' : ''}`;
         div.innerHTML = `
           <div class="pointer-events-none absolute -top-2 -left-2 w-6 h-6 bg-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-sm z-10">${unit.cost}</div>
-          <div class="pointer-events-none text-3xl filter drop-shadow-sm">${unit.icon}</div>
+          <div class="pointer-events-none text-2xl filter drop-shadow-sm">${unit.icon}</div>
           <div class="pointer-events-none text-[10px] font-black text-slate-800 mt-1">${unit.name}</div>
         `;
         div.onpointerdown = (e) => {
@@ -441,15 +441,58 @@
       }
     });
 
-    // --- 實體與物理引擎 (從 React 抽離) ---
+    // --- 實體與物理引擎 ---
     class Entity {
       constructor(x, y, team, stats, isTower = false, isMain = false) {
         this.x=x; this.y=y; this.team=team; this.hp=stats.hp; this.maxHp=stats.hp; this.dmg=stats.dmg; this.range=stats.range;
         this.speed=stats.speed; this.attackSpeed=stats.attackSpeed; this.type=stats.type; this.icon=stats.icon;
         this.isTower=isTower; this.isMain=isMain; this.cooldown=0; this.dead=false; this.target=null; this.radius=isTower?25:15;
+        this.isActive = !isMain; // 主堡預設不啟動，被攻擊或隊友塔掉落才甦醒
       }
+      
+      moveTowards(tx, ty) {
+        if (this.isTower) return;
+        let destX = tx, destY = ty;
+        const riverY = GAME_HEIGHT / 2;
+        const currentSide = this.y > riverY ? 1 : -1;
+        const targetSide = ty > riverY ? 1 : -1;
+        
+        // 尋找橋樑邏輯：不在同一側時，必須走橋樑過河
+        if (currentSide !== targetSide) {
+          const leftBridge = 80, rightBridge = GAME_WIDTH - 80;
+          const targetBridge = Math.abs(this.x - leftBridge) < Math.abs(this.x - rightBridge) ? leftBridge : rightBridge;
+          
+          if (Math.abs(this.x - targetBridge) > 15) {
+            // 走到橋口
+            destX = targetBridge;
+            destY = currentSide === 1 ? riverY + 30 : riverY - 30; 
+          } else {
+            // 直線過橋
+            destX = targetBridge;
+            destY = riverY - (currentSide * 30);
+          }
+        }
+        
+        const dX = destX - this.x, dY = destY - this.y;
+        const dist = Math.hypot(dX, dY);
+        if (dist > 0) { this.x += (dX / dist) * this.speed; this.y += (dY / dist) * this.speed; }
+      }
+
       update(ents, cPart) {
         if(this.dead)return; if(this.cooldown>0)this.cooldown--;
+        
+        // 判斷主堡甦醒條件
+        if (this.isMain && !this.isActive) {
+           if (this.hp < this.maxHp) {
+               this.isActive = true;
+           } else {
+               const myTowers = ents.filter(e => e.team === this.team && e.isTower && !e.isMain);
+               if (myTowers.length < 2) this.isActive = true;
+           }
+        }
+
+        if (!this.isActive) return; // 睡眠中的主堡不索敵也不攻擊
+
         if(this.isTower && this.target && !this.target.dead) {
           if(Math.hypot(this.target.x-this.x, this.target.y-this.y)>this.range) this.target=null;
         }
@@ -471,33 +514,47 @@
             if(this.type==='range') cPart({x:this.x,y:fy,tx:this.target.x,ty:this.target.y,target:this.target,dmg:this.dmg,life:30,type:'arrow',speed:12});
             else { this.target.takeDamage(this.dmg,cPart); cPart({x:this.target.x,y:this.target.y,life:10,type:'hit'}); }
           }} else if(!this.isTower) {
-            const dX=this.target.x-this.x, dY=this.target.y-this.y; const dist=Math.hypot(dX,dY);
-            if(dist>0){this.x+=(dX/dist)*this.speed; this.y+=(dY/dist)*this.speed;}
+            this.moveTowards(this.target.x, this.target.y);
           }
         } else if(!this.isTower) {
-          const ty=this.team==='player'?50:GAME_HEIGHT-50; const dY=ty-this.y;
-          if(Math.abs(dY)>0) this.y+=(dY/Math.abs(dY))*this.speed;
+          const ty=this.team==='player'?95:GAME_HEIGHT-95;
+          this.moveTowards(this.x, ty);
         }
       }
-      takeDamage(a,cp) { this.hp-=a; if(this.hp<=0){this.hp=0; this.dead=true; cp({x:this.x,y:this.y,life:30,type:'smoke',radius:15});} }
+      
+      takeDamage(a,cp) { 
+        this.hp-=a; 
+        if (this.isMain) this.isActive = true; // 被攻擊強制甦醒
+        if(this.hp<=0){this.hp=0; this.dead=true; cp({x:this.x,y:this.y,life:30,type:'smoke',radius:15});} 
+      }
+      
       draw(ctx) {
         ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(this.x-16,this.y-31,32,6);
         ctx.fillStyle=this.team==='enemy'?'#ff7675':'#74b9ff'; ctx.fillRect(this.x-15,this.y-30,30*(this.hp/this.maxHp),4);
         ctx.font="24px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.beginPath(); ctx.arc(this.x,this.y+5,12,0,Math.PI*2);
         ctx.fillStyle=this.team==='player'?'rgba(52,152,219,0.4)':'rgba(231,76,60,0.4)'; ctx.fill(); ctx.fillText(this.icon,this.x,this.y);
-        if(this.isMain) ctx.fillText('👑',this.x,this.y-15);
+        
+        if(this.isMain) {
+            ctx.fillText('👑',this.x,this.y-15);
+            if (!this.isActive) {
+                ctx.font="12px sans-serif"; ctx.fillStyle="white";
+                ctx.fillText('Zzz', this.x+15, this.y-15);
+            }
+        }
       }
     }
 
     class GameEngine {
       constructor(c, cfg) { this.c=c; this.ctx=c.getContext('2d'); this.config=cfg; this.ents=[]; this.parts=[]; this.pMoves=new Set(); this.eElix=5; this.time=180; this.eTimer=0; this.loop=this.loop.bind(this); }
       start() {
-        this.ents.push(new Entity(GAME_WIDTH/2,60,'enemy',{hp:3000,dmg:80,range:200,attackSpeed:60,icon:'🏰',type:'range'},true,true));
-        this.ents.push(new Entity(80,120,'enemy',{hp:1800,dmg:60,range:200,attackSpeed:60,icon:'🏯',type:'range'},true,false));
-        this.ents.push(new Entity(GAME_WIDTH-80,120,'enemy',{hp:1800,dmg:60,range:200,attackSpeed:60,icon:'🏯',type:'range'},true,false));
-        this.ents.push(new Entity(GAME_WIDTH/2,GAME_HEIGHT-60,'player',{hp:3000,dmg:80,range:200,attackSpeed:60,icon:'🏰',type:'range'},true,true));
-        this.ents.push(new Entity(80,GAME_HEIGHT-120,'player',{hp:1800,dmg:60,range:200,attackSpeed:60,icon:'🏯',type:'range'},true,false));
-        this.ents.push(new Entity(GAME_WIDTH-80,GAME_HEIGHT-120,'player',{hp:1800,dmg:60,range:200,attackSpeed:60,icon:'🏯',type:'range'},true,false));
+        // 更新塔的座標，防禦塔和主堡向內縮，避免擋住頂部計時器 UI
+        this.ents.push(new Entity(GAME_WIDTH/2,95,'enemy',{hp:3000,dmg:80,range:200,attackSpeed:60,icon:'🏰',type:'range'},true,true));
+        this.ents.push(new Entity(80,155,'enemy',{hp:1800,dmg:60,range:200,attackSpeed:60,icon:'🏯',type:'range'},true,false));
+        this.ents.push(new Entity(GAME_WIDTH-80,155,'enemy',{hp:1800,dmg:60,range:200,attackSpeed:60,icon:'🏯',type:'range'},true,false));
+        this.ents.push(new Entity(GAME_WIDTH/2,GAME_HEIGHT-95,'player',{hp:3000,dmg:80,range:200,attackSpeed:60,icon:'🏰',type:'range'},true,true));
+        this.ents.push(new Entity(80,GAME_HEIGHT-155,'player',{hp:1800,dmg:60,range:200,attackSpeed:60,icon:'🏯',type:'range'},true,false));
+        this.ents.push(new Entity(GAME_WIDTH-80,GAME_HEIGHT-155,'player',{hp:1800,dmg:60,range:200,attackSpeed:60,icon:'🏯',type:'range'},true,false));
+        
         this.tInt=setInterval(()=>{this.time--; this.config.onTimeUpdate(this.time); if(this.time<=0){this.stop();this.chkWin();}},1000);
         this.fId=requestAnimationFrame(this.loop);
       }
@@ -514,9 +571,13 @@
           const ks=Object.keys(UNIT_TYPES).filter(k=>UNIT_TYPES[k].type!=='spell'); const rk=ks[Math.floor(Math.random()*ks.length)];
           if(this.eElix>=UNIT_TYPES[rk].cost){this.eElix-=UNIT_TYPES[rk].cost; this.spawnLocal(rk,Math.random()>0.5?80:GAME_WIDTH-80,250,'enemy');}
         }
+        
         this.ents.forEach(e=>e.update(this.ents,p=>this.parts.push(p)));
+        
+        // 判斷主堡是否毀滅 (直接勝利/落敗)
         if(this.ents.find(e=>e.team==='player'&&e.isMain)?.dead) {this.stop();this.config.onGameOver('enemy');return;}
         if(this.ents.find(e=>e.team==='enemy'&&e.isMain)?.dead) {this.stop();this.config.onGameOver('player');return;}
+        
         this.ents=this.ents.filter(e=>!e.dead);
         for(let i=this.parts.length-1;i>=0;i--){
           let p=this.parts[i];
@@ -524,9 +585,13 @@
           else if(p.type==='fireball'){p.x+=p.vx;p.y+=p.vy;p.life--;if(p.life<=0){this.ents.forEach(e=>{if(e.team!==p.team&&Math.hypot(e.x-p.tx,e.y-p.ty)<=p.radius)e.takeDamage(p.dmg,pt=>this.parts.push(pt));});this.parts.push({x:p.tx,y:p.ty,life:30,type:'fire_explosion',radius:p.radius});this.parts.splice(i,1);}}
           else{p.life--;if(p.life<=0)this.parts.splice(i,1);if(p.type==='ring')p.radius+=2;if(p.type==='smoke')p.y-=1.5;}
         }
+        
+        // 繪製背景與橋樑
         this.ctx.fillStyle='#5d9e3e'; this.ctx.fillRect(0,0,GAME_WIDTH,GAME_HEIGHT); this.ctx.fillStyle='#4fc3f7'; this.ctx.fillRect(0,GAME_HEIGHT/2-20,GAME_WIDTH,40); this.ctx.fillStyle='#8d6e63'; this.ctx.fillRect(50,GAME_HEIGHT/2-25,60,50); this.ctx.fillRect(GAME_WIDTH-110,GAME_HEIGHT/2-25,60,50);
         if(state.selectedCard){if(UNIT_TYPES[state.selectedCard].type==='spell'){this.ctx.fillStyle='rgba(255,68,68,0.15)';this.ctx.fillRect(0,0,GAME_WIDTH,GAME_HEIGHT);}else{this.ctx.fillStyle='rgba(255,255,255,0.15)';this.ctx.fillRect(0,GAME_HEIGHT/2+30,GAME_WIDTH,GAME_HEIGHT/2-30);}}
+        
         this.ents.sort((a,b)=>a.y-b.y).forEach(e=>e.draw(this.ctx));
+        
         this.parts.forEach(p=>{
           if(p.type==='arrow'){this.ctx.fillStyle='white';this.ctx.beginPath();this.ctx.arc(p.x,p.y,3,0,Math.PI*2);this.ctx.fill();}
           else if(p.type==='hit'){this.ctx.fillStyle='orange';this.ctx.fillRect(p.x-5,p.y-5,10,10);}
@@ -537,10 +602,20 @@
         });
         this.fId=requestAnimationFrame(this.loop);
       }
+      
       chkWin() {
         const pT=this.ents.filter(e=>e.team==='player'&&e.isTower), eT=this.ents.filter(e=>e.team==='enemy'&&e.isTower);
-        if(pT.length>eT.length)this.config.onGameOver('player'); else if(eT.length>pT.length)this.config.onGameOver('enemy');
-        else{const pH=pT.reduce((s,t)=>s+t.hp,0), eH=eT.reduce((s,t)=>s+t.hp,0); if(pH>eH)this.config.onGameOver('player'); else if(eH>pH)this.config.onGameOver('enemy'); else this.config.onGameOver('draw');}
+        
+        // 皇室戰爭標準超時判定：比較存活塔數 (皇冠數)
+        if(pT.length>eT.length)this.config.onGameOver('player'); 
+        else if(eT.length>pT.length)this.config.onGameOver('enemy');
+        else {
+            // 如果塔數一樣，進行血量突破機制判定(總血量)
+            const pH=pT.reduce((s,t)=>s+t.hp,0), eH=eT.reduce((s,t)=>s+t.hp,0); 
+            if(pH>eH)this.config.onGameOver('player'); 
+            else if(eH>pH)this.config.onGameOver('enemy'); 
+            else this.config.onGameOver('draw');
+        }
       }
     }
   </script>
