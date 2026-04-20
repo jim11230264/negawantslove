@@ -701,24 +701,24 @@
    });
 
 // 2. 禁用常用的開發者工具快捷鍵
-document.addEventListener('keydown', function(e) {
+    document.addEventListener('keydown', function(e) {
   // 阻擋 F12
-  if (e.key === 'F12' || e.keyCode === 123) {
+    if (e.key === 'F12' || e.keyCode === 123) {
     e.preventDefault();
   }
   // 阻擋 Ctrl+Shift+I (Windows 打開開發者工具) 或 Cmd+Opt+I (Mac)
-  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'i')) {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'i')) {
     e.preventDefault();
   }
   // 阻擋 Ctrl+Shift+J (打開控制台)
-  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'J' || e.key === 'j')) {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'J' || e.key === 'j')) {
     e.preventDefault();
   }
   // 阻擋 Ctrl+U (Windows 檢視網頁原始碼) 或 Cmd+Opt+U (Mac)
-  if ((e.ctrlKey || e.metaKey) && (e.key === 'U' || e.key === 'u')) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'U' || e.key === 'u')) {
     e.preventDefault();
   }
-});
+  });
   </script>
 </body>
 </html>
