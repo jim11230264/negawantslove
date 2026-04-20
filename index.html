@@ -119,18 +119,13 @@
     </div>
 
   </div>
-
-  <!-- ===================================================================== -->
   <!-- Firebase 模組與遊戲邏輯 -->
-  <!-- ===================================================================== -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, collection, onSnapshot, updateDoc, doc, getDocs, setDoc, deleteDoc, arrayUnion, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    // ⚠️ ===================================================== ⚠️
-    // ⚠️ 請將下方的 firebaseConfig 替換為您在 Firebase Console 取得的設定
-    // ⚠️ ===================================================== ⚠️
+    // 
     const firebaseConfig = {
       apiKey: "YOUR_API_KEY_HERE",
       authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
