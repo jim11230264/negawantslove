@@ -146,7 +146,7 @@
       signInAnonymously(auth);
       onAuthStateChanged(auth, user => { currentUser = user; });
     } catch (e) {
-      console.warn("Firebase 未設定，僅能使用單機模式。");
+      console.warn("目前僅能使用單機模式。");
     }
 
     // --- 遊戲常數與狀態 ---
@@ -206,7 +206,7 @@
         return;
       }
 
-      if (!currentUser) return alert('尚未連線到伺服器 (請檢查 Firebase 設定)');
+      if (!currentUser) return alert('尚未連線到伺服器');
       
       els.setupForm.classList.add('hidden');
       els.waiting.classList.remove('hidden');
