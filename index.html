@@ -695,6 +695,30 @@
         }
       }
     }
+    // 1. 禁用滑鼠右鍵 (防止點擊「檢查」或「檢視網頁原始碼」)
+    document.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+   });
+
+// 2. 禁用常用的開發者工具快捷鍵
+document.addEventListener('keydown', function(e) {
+  // 阻擋 F12
+  if (e.key === 'F12' || e.keyCode === 123) {
+    e.preventDefault();
+  }
+  // 阻擋 Ctrl+Shift+I (Windows 打開開發者工具) 或 Cmd+Opt+I (Mac)
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'i')) {
+    e.preventDefault();
+  }
+  // 阻擋 Ctrl+Shift+J (打開控制台)
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'J' || e.key === 'j')) {
+    e.preventDefault();
+  }
+  // 阻擋 Ctrl+U (Windows 檢視網頁原始碼) 或 Cmd+Opt+U (Mac)
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'U' || e.key === 'u')) {
+    e.preventDefault();
+  }
+});
   </script>
 </body>
 </html>
