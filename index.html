@@ -293,9 +293,9 @@
         state.isOnline = true; state.matchId = code; state.playerRole = 'player2';
         await updateDoc(matchRef, { player2: currentUser.uid, player2Name: state.playerName, status: 'playing', startTime: Date.now() });
         listenToMatch();
-      } else {
-        alert("找不到該房間，或對戰已開始！");
-      }
+      } //else {
+        //alert("找不到該房間，或對戰已開始！");
+      //}
     }
 
     async function cancelMatchmaking() {
