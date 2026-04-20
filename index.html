@@ -145,8 +145,6 @@
     import { getFirestore, collection, onSnapshot, updateDoc, doc, getDocs, setDoc, deleteDoc, arrayUnion, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
     // ⚠️ ===================================================== ⚠️
-    // ⚠️ 請將下方的 firebaseConfig 替換為您在 Firebase Console 取得的設定
-    // ⚠️ ===================================================== ⚠️
     const firebaseConfig = {
     apiKey: "AIzaSyDbjh-siRJx23qQPybbrlwVaOd8ajYPcUs",
     authDomain: "clashhh-48b07.firebaseapp.com",
@@ -155,6 +153,7 @@
     messagingSenderId: "83908803774",
     appId: "1:83908803774:web:ed6f37736175d1469d32ef"
     };
+
 
     // 如果在測試環境中有注入設定，則優先使用
     const finalConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? JSON.parse(__firebase_config) : firebaseConfig;
@@ -655,6 +654,11 @@
           this.c=c; this.ctx=c.getContext('2d'); this.config=cfg; 
           this.ents=[]; this.parts=[]; this.pMoves=new Set(); 
           this.eElix=5; this.time=180; this.logicTimer=0; 
+          
+          // 新增：用於計算真實時間差的變數
+          this.lastLogicTime = 0; 
+          this.accumulator = 0;
+
           this.logicLoop = this.logicLoop.bind(this);
           this.renderLoop = this.renderLoop.bind(this);
       }
@@ -666,6 +670,10 @@
         this.ents.push(new Entity(80,GAME_HEIGHT-155,'player',{hp:1800,dmg:60,range:200,attackSpeed:60,icon:'🏯',type:'range'},true,false));
         this.ents.push(new Entity(GAME_WIDTH-80,GAME_HEIGHT-155,'player',{hp:1800,dmg:60,range:200,attackSpeed:60,icon:'🏯',type:'range'},true,false));
         
+        // 初始化真實時間
+        this.lastLogicTime = Date.now();
+        this.accumulator = 0;
+
         // 鎖定 60 Tick 確保所有裝置物理與勝負判定完全同步
         this.logicInt = setInterval(this.logicLoop, 1000 / 60);
         this.fId = requestAnimationFrame(this.renderLoop);
@@ -680,6 +688,27 @@
       logicLoop() {
         if(!state.isPlaying) return; 
         
+        const now = Date.now();
+        let elapsed = now - this.lastLogicTime;
+        this.lastLogicTime = now;
+
+        // 核心修改：防呆限制。如果切換分頁超過 15 秒，限制最多一次補償 15 秒的邏輯
+        // 避免休眠太久導致 while 迴圈卡死瀏覽器
+        if (elapsed > 15000) elapsed = 15000;
+
+        this.accumulator += elapsed;
+        const tickRate = 1000 / 60;
+
+        // 追趕機制：只要有流失的時間，就瘋狂執行邏輯直到補齊進度
+        while (this.accumulator >= tickRate) {
+            this.tickLogic();
+            this.accumulator -= tickRate;
+            if (!state.isPlaying) break; // 若在結算時停止，立刻中斷
+        }
+      }
+
+      // 將原先的 logicLoop 內容移到這裡，專門處理「每 1 個物理幀」該做的事
+      tickLogic() {
         this.logicTimer++;
         if (this.logicTimer % 60 === 0) {
             this.time--; 
@@ -799,7 +828,6 @@
     e.preventDefault();
   }
   });
-
   </script>
 </body>
 </html>
