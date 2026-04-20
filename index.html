@@ -481,7 +481,7 @@
         this.speed=stats.speed; this.attackSpeed=stats.attackSpeed; this.type=stats.type; this.icon=stats.icon;
         this.isTower=isTower; this.isMain=isMain; this.cooldown=0; this.dead=false; this.target=null; this.radius=isTower?25:15;
         this.isActive = !isMain; // 主堡預設不啟動，被攻擊或隊友塔掉落才甦醒
-        this.deployTimer = isTower ? 0 : 30; // 新增：下牌準備時間 (60 Ticks = 1秒)
+        this.deployTimer = isTower ? 0 : 15; // 新增：下牌準備時間 (60 Ticks = 1秒)
       }
       
       moveTowards(tx, ty) {
