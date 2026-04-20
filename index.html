@@ -378,7 +378,12 @@
         const canAfford = state.elixir >= unit.cost;
         const isSel = state.selectedCard === key;
         const div = document.createElement('div');
-        div.className = `flex-1 bg-slate-200 rounded-lg relative flex flex-col items-center justify-center cursor-pointer transition-transform touch-none select-none ${!canAfford ? 'opacity-50 grayscale' : 'hover:-translate-y-1 border-b-4 border-slate-400'} ${isSel ? 'border-4 border-yellow-400 bg-white -translate-y-2' : ''}`;
+        
+        // 修改：讓選取的卡牌無論是否足夠聖水都有黃色外框，且移除點擊限制
+        div.className = `flex-1 bg-slate-200 rounded-lg relative flex flex-col items-center justify-center cursor-pointer transition-transform touch-none select-none ` + 
+                        `${isSel ? 'border-4 border-yellow-400 bg-white -translate-y-2' : 'hover:-translate-y-1 border-b-4 border-slate-400'} ` + 
+                        `${!canAfford ? (isSel ? 'opacity-80' : 'opacity-50 grayscale') : ''}`;
+                        
         div.innerHTML = `
           <div class="pointer-events-none absolute -top-2 -left-2 w-6 h-6 bg-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-sm z-10">${unit.cost}</div>
           <div class="pointer-events-none text-2xl filter drop-shadow-sm">${unit.icon}</div>
@@ -386,21 +391,19 @@
         `;
         div.onpointerdown = (e) => {
           e.preventDefault();
-          if (canAfford) {
-            state.selectedCard = isSel ? null : key;
-            renderCards();
-            if (state.selectedCard) {
-              els.deployMsg.innerText = unit.type === 'spell' ? '點擊任意位置施放' : '點擊己方半場部署';
-              els.deployMsg.classList.remove('hidden');
-            } else {
-              els.deployMsg.classList.add('hidden');
-            }
+          // 移除 canAfford 判斷，允許隨時「預選」卡牌
+          state.selectedCard = isSel ? null : key;
+          renderCards();
+          if (state.selectedCard) {
+            els.deployMsg.innerText = unit.type === 'spell' ? '點擊任意位置施放' : '點擊己方半場部署';
+            els.deployMsg.classList.remove('hidden');
+          } else {
+            els.deployMsg.classList.add('hidden');
           }
         };
         els.cardsContainer.appendChild(div);
       });
     }
-
     // 點擊事件綁定
     document.getElementById('btn-random').onclick = () => startMatchmaking('online');
     document.getElementById('btn-practice').onclick = () => startMatchmaking('offline');
