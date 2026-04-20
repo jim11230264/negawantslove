@@ -444,7 +444,7 @@
       }
     });
 
-    // --- 實體與物理引擎 ---
+     --- 實體與物理引擎 ---
     class Entity {
       constructor(x, y, team, stats, isTower = false, isMain = false) {
         this.x=x; this.y=y; this.team=team; this.hp=stats.hp; this.maxHp=stats.hp; this.dmg=stats.dmg; this.range=stats.range;
@@ -456,24 +456,36 @@
       moveTowards(tx, ty) {
         if (this.isTower) return;
         let destX = tx, destY = ty;
-        const riverY = GAME_HEIGHT / 2;
-        const currentSide = this.y > riverY ? 1 : -1;
-        const targetSide = ty > riverY ? 1 : -1;
+        const riverTop = GAME_HEIGHT / 2 - 25; 
+        const riverBottom = GAME_HEIGHT / 2 + 25; 
         
-        // 尋找橋樑邏輯：不在同一側時，必須走橋樑過河
-        if (currentSide !== targetSide) {
-          const leftBridge = 80, rightBridge = GAME_WIDTH - 80;
-          const targetBridge = Math.abs(this.x - leftBridge) < Math.abs(this.x - rightBridge) ? leftBridge : rightBridge;
-          
-          if (Math.abs(this.x - targetBridge) > 15) {
-            // 走到橋口
-            destX = targetBridge;
-            destY = currentSide === 1 ? riverY + 30 : riverY - 30; 
-          } else {
-            // 直線過橋
-            destX = targetBridge;
-            destY = riverY - (currentSide * 30);
-          }
+        const leftBridge = 80;
+        const rightBridge = GAME_WIDTH - 80;
+        const targetBridge = Math.abs(this.x - leftBridge) < Math.abs(this.x - rightBridge) ? leftBridge : rightBridge;
+
+        // 尋路演算法：過河必須強制走橋樑
+        const needToCrossUp = this.y > riverBottom && ty < riverBottom;
+        const needToCrossDown = this.y < riverTop && ty > riverTop;
+
+        if (needToCrossUp) {
+            // 往上方過河：先走到下方橋口
+            if (Math.abs(this.x - targetBridge) > 5) {
+                destX = targetBridge; destY = riverBottom + 10;
+            } else {
+                destX = targetBridge; destY = riverTop - 10;
+            }
+        } else if (needToCrossDown) {
+            // 往下方過河：先走到上方橋口
+            if (Math.abs(this.x - targetBridge) > 5) {
+                destX = targetBridge; destY = riverTop - 10;
+            } else {
+                destX = targetBridge; destY = riverBottom + 10;
+            }
+        } else if (this.y >= riverTop && this.y <= riverBottom) {
+            // 在河流區域中：強制 X 軸對齊橋樑，防止斜向走在水面上
+            if (Math.abs(this.x - targetBridge) > 5) {
+                destX = targetBridge; destY = this.y;
+            }
         }
         
         const dX = destX - this.x, dY = destY - this.y;
@@ -484,7 +496,6 @@
       update(ents, cPart) {
         if(this.dead)return; if(this.cooldown>0)this.cooldown--;
         
-        // 判斷主堡甦醒條件
         if (this.isMain && !this.isActive) {
            if (this.hp < this.maxHp) {
                this.isActive = true;
@@ -494,7 +505,7 @@
            }
         }
 
-        if (!this.isActive) return; // 睡眠中的主堡不索敵也不攻擊
+        if (!this.isActive) return;
 
         if(this.isTower && this.target && !this.target.dead) {
           if(Math.hypot(this.target.x-this.x, this.target.y-this.y)>this.range) this.target=null;
@@ -527,7 +538,7 @@
       
       takeDamage(a,cp) { 
         this.hp-=a; 
-        if (this.isMain) this.isActive = true; // 被攻擊強制甦醒
+        if (this.isMain) this.isActive = true; 
         if(this.hp<=0){this.hp=0; this.dead=true; cp({x:this.x,y:this.y,life:30,type:'smoke',radius:15});} 
       }
       
@@ -548,9 +559,14 @@
     }
 
     class GameEngine {
-      constructor(c, cfg) { this.c=c; this.ctx=c.getContext('2d'); this.config=cfg; this.ents=[]; this.parts=[]; this.pMoves=new Set(); this.eElix=5; this.time=180; this.eTimer=0; this.loop=this.loop.bind(this); }
+      constructor(c, cfg) { 
+          this.c=c; this.ctx=c.getContext('2d'); this.config=cfg; 
+          this.ents=[]; this.parts=[]; this.pMoves=new Set(); 
+          this.eElix=5; this.time=180; this.logicTimer=0; 
+          this.logicLoop = this.logicLoop.bind(this);
+          this.renderLoop = this.renderLoop.bind(this);
+      }
       start() {
-        // 更新塔的座標，防禦塔和主堡向內縮，避免擋住頂部計時器 UI
         this.ents.push(new Entity(GAME_WIDTH/2,95,'enemy',{hp:3000,dmg:80,range:200,attackSpeed:60,icon:'🏰',type:'range'},true,true));
         this.ents.push(new Entity(80,155,'enemy',{hp:1800,dmg:60,range:200,attackSpeed:60,icon:'🏯',type:'range'},true,false));
         this.ents.push(new Entity(GAME_WIDTH-80,155,'enemy',{hp:1800,dmg:60,range:200,attackSpeed:60,icon:'🏯',type:'range'},true,false));
@@ -558,39 +574,81 @@
         this.ents.push(new Entity(80,GAME_HEIGHT-155,'player',{hp:1800,dmg:60,range:200,attackSpeed:60,icon:'🏯',type:'range'},true,false));
         this.ents.push(new Entity(GAME_WIDTH-80,GAME_HEIGHT-155,'player',{hp:1800,dmg:60,range:200,attackSpeed:60,icon:'🏯',type:'range'},true,false));
         
-        this.tInt=setInterval(()=>{this.time--; this.config.onTimeUpdate(this.time); if(this.time<=0){this.stop();this.chkWin();}},1000);
-        this.fId=requestAnimationFrame(this.loop);
+        // 核心修改：將物理邏輯與畫面繪製分離。鎖定 60 Tick 確保所有裝置物理同步
+        this.logicInt = setInterval(this.logicLoop, 1000 / 60);
+        this.fId = requestAnimationFrame(this.renderLoop);
       }
-      stop() { clearInterval(this.tInt); cancelAnimationFrame(this.fId); }
+      stop() { clearInterval(this.logicInt); cancelAnimationFrame(this.fId); }
       syncMoves(ms) { ms.forEach(m=>{if(!this.pMoves.has(m.id)&&m.p!==this.config.playerRole){this.pMoves.add(m.id); this.spawnLocal(m.type,this.config.playerRole==='player2'?GAME_WIDTH-m.x:m.x,this.config.playerRole==='player2'?GAME_HEIGHT-m.y:m.y,'enemy');}}); }
       spawnLocal(t,x,y,tm) {
         if(UNIT_TYPES[t].type==='spell') this.parts.push({x:GAME_WIDTH/2,y:tm==='player'?GAME_HEIGHT:0,tx:x,ty:y,vx:(x-GAME_WIDTH/2)/25,vy:(y-(tm==='player'?GAME_HEIGHT:0))/25,life:25,type:'fireball',dmg:UNIT_TYPES[t].dmg,radius:UNIT_TYPES[t].range,team:tm});
         else { this.ents.push(new Entity(x,y,tm,UNIT_TYPES[t])); this.parts.push({x,y,life:20,type:'ring',radius:1}); }
       }
-      loop() {
-        if(!state.isPlaying)return; this.eTimer++;
-        if(this.eTimer>(this.time<=60?30:60)) { this.eTimer=0; if(state.elixir<10)this.config.onElixirUpdate(state.elixir+0.5); if(!this.config.isOnline&&this.eElix<10)this.eElix+=0.5; }
-        if(!this.config.isOnline&&this.eElix>=4&&Math.random()<0.02) {
+      
+      logicLoop() {
+        if(!state.isPlaying) return; 
+        
+        this.logicTimer++;
+        if (this.logicTimer % 60 === 0) {
+            this.time--; 
+            this.config.onTimeUpdate(this.time); 
+            if (this.time <= 0) { this.chkWin(); return; }
+        }
+
+        const elixirInterval = this.time <= 60 ? 30 : 60;
+        if (this.logicTimer % elixirInterval === 0) {
+            if(state.elixir < 10) this.config.onElixirUpdate(state.elixir + 0.5); 
+            if(!this.config.isOnline && this.eElix < 10) this.eElix += 0.5;
+        }
+
+        if(!this.config.isOnline && this.eElix >= 4 && Math.random() < 0.02) {
           const ks=Object.keys(UNIT_TYPES).filter(k=>UNIT_TYPES[k].type!=='spell'); const rk=ks[Math.floor(Math.random()*ks.length)];
           if(this.eElix>=UNIT_TYPES[rk].cost){this.eElix-=UNIT_TYPES[rk].cost; this.spawnLocal(rk,Math.random()>0.5?80:GAME_WIDTH-80,250,'enemy');}
         }
         
         this.ents.forEach(e=>e.update(this.ents,p=>this.parts.push(p)));
         
-        // 判斷主堡是否毀滅 (直接勝利/落敗)
-        if(this.ents.find(e=>e.team==='player'&&e.isMain)?.dead) {this.stop();this.config.onGameOver('enemy');return;}
-        if(this.ents.find(e=>e.team==='enemy'&&e.isMain)?.dead) {this.stop();this.config.onGameOver('player');return;}
+        // 判斷主堡是否毀滅 (第一時間觸發勝利/落敗，確保兩端一致)
+        if(this.ents.find(e=>e.team==='player'&&e.isMain)?.dead) { this.chkWin(); return; }
+        if(this.ents.find(e=>e.team==='enemy'&&e.isMain)?.dead) { this.chkWin(); return; }
         
         this.ents=this.ents.filter(e=>!e.dead);
+        
+        // 更新所有特效與投射物
         for(let i=this.parts.length-1;i>=0;i--){
           let p=this.parts[i];
-          if(p.type==='arrow'){const d=Math.hypot(p.target.x-p.x,p.target.y-p.y);if(d<p.speed||p.target.dead){if(!p.target.dead){p.target.takeDamage(p.dmg,pt=>this.parts.push(pt));this.parts.push({x:p.target.x,y:p.target.y,life:10,type:'hit'});}this.parts.splice(i,1);}else{p.x+=((p.target.x-p.x)/d)*p.speed;p.y+=((p.target.y-p.y)/d)*p.speed;}}
-          else if(p.type==='fireball'){p.x+=p.vx;p.y+=p.vy;p.life--;if(p.life<=0){this.ents.forEach(e=>{if(e.team!==p.team&&Math.hypot(e.x-p.tx,e.y-p.ty)<=p.radius)e.takeDamage(p.dmg,pt=>this.parts.push(pt));});this.parts.push({x:p.tx,y:p.ty,life:30,type:'fire_explosion',radius:p.radius});this.parts.splice(i,1);}}
-          else{p.life--;if(p.life<=0)this.parts.splice(i,1);if(p.type==='ring')p.radius+=2;if(p.type==='smoke')p.y-=1.5;}
+          if(p.type==='arrow'){
+              const d=Math.hypot(p.target.x-p.x,p.target.y-p.y);
+              if(d<p.speed||p.target.dead){
+                  if(!p.target.dead){p.target.takeDamage(p.dmg,pt=>this.parts.push(pt));this.parts.push({x:p.target.x,y:p.target.y,life:10,type:'hit'});}
+                  this.parts.splice(i,1);
+              } else {
+                  p.x+=((p.target.x-p.x)/d)*p.speed;p.y+=((p.target.y-p.y)/d)*p.speed;
+              }
+          }
+          else if(p.type==='fireball'){
+              p.x+=p.vx;p.y+=p.vy;p.life--;
+              if(p.life<=0){
+                  this.ents.forEach(e=>{if(e.team!==p.team&&Math.hypot(e.x-p.tx,e.y-p.ty)<=p.radius)e.takeDamage(p.dmg,pt=>this.parts.push(pt));});
+                  this.parts.push({x:p.tx,y:p.ty,life:30,type:'fire_explosion',radius:p.radius});
+                  this.parts.splice(i,1);
+              }
+          }
+          else{
+              p.life--;if(p.life<=0)this.parts.splice(i,1);
+              if(p.type==='ring')p.radius+=2;
+              if(p.type==='smoke')p.y-=1.5;
+          }
         }
+      }
+
+      renderLoop() {
+        if(!state.isPlaying) return;
         
-        // 繪製背景與橋樑
-        this.ctx.fillStyle='#5d9e3e'; this.ctx.fillRect(0,0,GAME_WIDTH,GAME_HEIGHT); this.ctx.fillStyle='#4fc3f7'; this.ctx.fillRect(0,GAME_HEIGHT/2-20,GAME_WIDTH,40); this.ctx.fillStyle='#8d6e63'; this.ctx.fillRect(50,GAME_HEIGHT/2-25,60,50); this.ctx.fillRect(GAME_WIDTH-110,GAME_HEIGHT/2-25,60,50);
+        this.ctx.fillStyle='#5d9e3e'; this.ctx.fillRect(0,0,GAME_WIDTH,GAME_HEIGHT); 
+        this.ctx.fillStyle='#4fc3f7'; this.ctx.fillRect(0,GAME_HEIGHT/2-20,GAME_WIDTH,40); 
+        this.ctx.fillStyle='#8d6e63'; this.ctx.fillRect(50,GAME_HEIGHT/2-25,60,50); this.ctx.fillRect(GAME_WIDTH-110,GAME_HEIGHT/2-25,60,50);
+        
         if(state.selectedCard){if(UNIT_TYPES[state.selectedCard].type==='spell'){this.ctx.fillStyle='rgba(255,68,68,0.15)';this.ctx.fillRect(0,0,GAME_WIDTH,GAME_HEIGHT);}else{this.ctx.fillStyle='rgba(255,255,255,0.15)';this.ctx.fillRect(0,GAME_HEIGHT/2+30,GAME_WIDTH,GAME_HEIGHT/2-30);}}
         
         this.ents.sort((a,b)=>a.y-b.y).forEach(e=>e.draw(this.ctx));
@@ -603,20 +661,28 @@
           else if(p.type==='fireball'){this.ctx.fillStyle='#ff4400';this.ctx.beginPath();this.ctx.arc(p.x,p.y,12,0,Math.PI*2);this.ctx.fill();}
           else if(p.type==='fire_explosion'){this.ctx.fillStyle=`rgba(255,80,0,${p.life/30})`;this.ctx.beginPath();this.ctx.arc(p.x,p.y,p.radius,0,Math.PI*2);this.ctx.fill();}
         });
-        this.fId=requestAnimationFrame(this.loop);
+        
+        this.fId = requestAnimationFrame(this.renderLoop);
       }
       
       chkWin() {
-        const pT=this.ents.filter(e=>e.team==='player'&&e.isTower), eT=this.ents.filter(e=>e.team==='enemy'&&e.isTower);
+        this.stop();
+        // 優先判斷主堡是否被摧毀
+        const pMain = this.ents.find(e=>e.team==='player'&&e.isMain);
+        const eMain = this.ents.find(e=>e.team==='enemy'&&e.isMain);
         
-        // 皇室戰爭標準超時判定：比較存活塔數 (皇冠數)
-        if(pT.length>eT.length)this.config.onGameOver('player'); 
-        else if(eT.length>pT.length)this.config.onGameOver('enemy');
+        if (pMain?.dead) { this.config.onGameOver('enemy'); return; }
+        if (eMain?.dead) { this.config.onGameOver('player'); return; }
+        
+        // 若時間到且主堡都存活，以剩餘塔數 (皇冠數) 決定勝負
+        const pT=this.ents.filter(e=>e.team==='player'&&e.isTower), eT=this.ents.filter(e=>e.team==='enemy'&&e.isTower);
+        if(pT.length>eT.length) this.config.onGameOver('player'); 
+        else if(eT.length>pT.length) this.config.onGameOver('enemy');
         else {
-            // 如果塔數一樣，進行血量突破機制判定(總血量)
+            // 塔數相同則比較剩餘防禦塔的總血量
             const pH=pT.reduce((s,t)=>s+t.hp,0), eH=eT.reduce((s,t)=>s+t.hp,0); 
-            if(pH>eH)this.config.onGameOver('player'); 
-            else if(eH>pH)this.config.onGameOver('enemy'); 
+            if(pH>eH) this.config.onGameOver('player'); 
+            else if(eH>pH) this.config.onGameOver('enemy'); 
             else this.config.onGameOver('draw');
         }
       }
