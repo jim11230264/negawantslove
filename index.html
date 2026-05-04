@@ -30,6 +30,26 @@
       <div id="ui-timer" class="text-2xl font-black px-4 py-1 rounded-full border-2 bg-black/50 border-white/20 text-white">03:00</div>
       <div id="ui-opp-name" class="bg-black/60 px-3 py-1 rounded-full text-red-300 font-bold border border-red-500/50 flex items-center gap-1">⚔️ 對手</div>
     </div>
+       <!-- 玩家與對手表情氣泡 -->
+    <div id="player-emote" class="absolute bottom-[130px] left-4 bg-white rounded-2xl p-2 text-4xl shadow-[0_4px_10px_rgba(0,0,0,0.5)] transition-all duration-300 opacity-0 translate-y-4 pointer-events-none z-40 border-2 border-slate-300 flex items-center justify-center"></div>
+    <div id="enemy-emote" class="absolute top-[70px] right-4 bg-white rounded-2xl p-2 text-4xl shadow-[0_4px_10px_rgba(0,0,0,0.5)] transition-all duration-300 opacity-0 -translate-y-4 pointer-events-none z-40 border-2 border-slate-300 flex items-center justify-center"></div>
+
+    <!-- 表情控制面板 -->
+    <div id="emote-controls" class="absolute bottom-[100px] left-3 z-30 hidden">
+      <button id="btn-toggle-emote" class="w-11 h-11 bg-white rounded-full shadow-[0_2px_5px_rgba(0,0,0,0.5)] flex items-center justify-center text-2xl border-2 border-slate-300 active:scale-95 transition-transform">💬</button>
+      <div id="emote-panel" class="absolute bottom-14 left-0 bg-white/95 backdrop-blur rounded-xl p-2 flex flex-col gap-2 shadow-2xl hidden border-2 border-slate-300 w-[150px]">
+        <div class="flex justify-between">
+          <button class="btn-emote text-3xl hover:scale-110 transition-transform active:scale-95">😂</button>
+          <button class="btn-emote text-3xl hover:scale-110 transition-transform active:scale-95">😡</button>
+          <button class="btn-emote text-3xl hover:scale-110 transition-transform active:scale-95">😭</button>
+        </div>
+        <div class="flex justify-between">
+          <button class="btn-emote text-3xl hover:scale-110 transition-transform active:scale-95">👎</button>
+          <button class="btn-emote text-3xl hover:scale-110 transition-transform active:scale-95">👍</button>
+          <button class="btn-emote text-3xl hover:scale-110 transition-transform active:scale-95">🏳️</button>
+        </div>
+      </div>
+    </div>
 
     <!-- 部署提示字卡 -->
     <div id="deploy-msg" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/80 text-white px-5 py-2 rounded-full font-bold animate-bounce pointer-events-none z-10 shadow-lg text-sm hidden">
@@ -816,7 +836,7 @@
         if (!this.config.isOnline && this.logicTimer % 60 === 0) {
             // AI 隨機表情互動 (3% 機率每秒發送)
             if (Math.random() < 0.03 && this.config.onEmote) {
-                const emotesList = ['😡', '😂', '😭', '😱', '👍', '🏳️'];
+                const emotesList = ['😡', '😂', '😭', '👎', '👍', '🏳️'];
                 this.config.onEmote('enemy', emotesList[Math.floor(Math.random() * emotesList.length)]);
             }
         }
