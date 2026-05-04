@@ -159,7 +159,7 @@
     const finalConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? JSON.parse(__firebase_config) : firebaseConfig;
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'royal-clash-pvp-v1';
 
-    let app, auth, db, currentUser;
+     let app, auth, db, currentUser;
     try {
       app = initializeApp(finalConfig);
       auth = getAuth(app);
@@ -173,11 +173,11 @@
     // --- 遊戲常數與狀態 ---
     const GAME_WIDTH = 450, GAME_HEIGHT = 800;
     const UNIT_TYPES = {
-      KNIGHT: { name: '騎士', icon: '⚔️', cost: 3, hp: 600, dmg: 50, range: 40, speed: 1.35, attackSpeed: 60, type: 'melee' },
-      ARCHER: { name: '弓箭手', icon: '🏹', cost: 3, hp: 285, dmg: 40, range: 200, speed: 1.1, attackSpeed: 50, type: 'range' },
-      GIANT: { name: '巨屌人', icon: '👹', cost: 5, hp: 3600, dmg: 100, range: 40, speed: 0.2, attackSpeed: 90, type: 'range' },
-      SKELETON: { name: '炸彈兵', icon: '💣', cost: 2, hp: 150, dmg: 67, range: 120, speed: 3.6, attackSpeed: 25, type: 'range' },
-      FIREBALL: { name: '火球', icon: '🔥', cost: 4, type: 'spell', dmg: 250, range:75 }
+      KNIGHT: { name: '騎士', icon: '⚔️', cost: 3, hp: 600, dmg: 50, range: 40, speed: 1.5, attackSpeed: 60, type: 'melee' },
+      ARCHER: { name: '弓箭手', icon: '🏹', cost: 3, hp: 250, dmg: 40, range: 200, speed: 1.1, attackSpeed: 50, type: 'range' },
+      GIANT: { name: '巨人', icon: '👹', cost: 5, hp: 1600, dmg: 100, range: 40, speed: 0.8, attackSpeed: 90, type: 'building_target' },
+      SKELETON: { name: '炸彈兵', icon: '💣', cost: 2, hp: 150, dmg: 100, range: 160, speed: 1.2, attackSpeed: 70, type: 'range', aoeRadius: 60 },
+      FIREBALL: { name: '火球', icon: '🔥', cost: 4, type: 'spell', dmg: 220, range: 100 }
     };
 
     let state = {
@@ -487,12 +487,16 @@
       if (u.type === 'spell' || cy > GAME_HEIGHT / 2 + 30) {
         if (state.elixir >= u.cost) {
           state.elixir -= u.cost; updateElixirBar();
-          engine.spawnLocal(state.selectedCard, cx, cy, 'player');
+          
           if (state.isOnline) {
             const sx = state.playerRole === 'player2' ? GAME_WIDTH - cx : cx;
             const sy = state.playerRole === 'player2' ? GAME_HEIGHT - cy : cy;
-            engine.config.onMove({ id: crypto.randomUUID(), p: state.playerRole, type: state.selectedCard, x: sx, y: sy });
+            // 修改：加入絕對時間戳 (延遲 600ms) 確保雙方設備在同一毫秒出兵
+            engine.config.onMove({ id: crypto.randomUUID(), p: state.playerRole, type: state.selectedCard, x: sx, y: sy, time: Date.now() + 600 });
+          } else {
+            engine.spawnLocal(state.selectedCard, cx, cy, 'player');
           }
+          
           engine.config.onCardUsed();
         }
       } else {
@@ -505,6 +509,7 @@
       constructor(x, y, team, stats, isTower = false, isMain = false) {
         this.x=x; this.y=y; this.team=team; this.hp=stats.hp; this.maxHp=stats.hp; this.dmg=stats.dmg; this.range=stats.range;
         this.speed=stats.speed; this.attackSpeed=stats.attackSpeed; this.type=stats.type; this.icon=stats.icon;
+        this.aoeRadius=stats.aoeRadius; // 新增：讀取範圍爆炸半徑
         this.isTower=isTower; this.isMain=isMain; this.cooldown=0; this.dead=false; this.target=null; this.radius=isTower?25:15;
         this.isActive = !isMain; // 主堡預設不啟動，被攻擊或隊友塔掉落才甦醒
         this.deployTimer = isTower ? 0 : 60; // 新增：下牌準備時間 (60 Ticks = 1秒)
@@ -602,7 +607,8 @@
               if(this.cooldown<=0) {
                   this.cooldown=this.attackSpeed; 
                   let fy=this.isTower?this.y-25:this.y;
-                  if(this.type==='range') cPart({x:this.x,y:fy,tx:this.target.x,ty:this.target.y,target:this.target,dmg:this.dmg,life:30,type:'arrow',speed:12});
+                  // 修改：將 aoeRadius 與 team 一併傳給投射物
+                  if(this.type==='range') cPart({x:this.x,y:fy,tx:this.target.x,ty:this.target.y,target:this.target,dmg:this.dmg,life:30,type:'arrow',speed:12, aoeRadius: this.aoeRadius, team: this.team});
                   else { this.target.takeDamage(this.dmg,cPart); cPart({x:this.target.x,y:this.target.y,life:10,type:'hit'}); }
               }
           } else if(!this.isTower) {
@@ -655,6 +661,7 @@
           this.ents=[]; this.parts=[]; this.pMoves=new Set(); 
           this.eElix=5; this.time=180; this.logicTimer=0; 
           
+          this.pendingSpawns = []; // 新增：等待同步出兵的佇列
           // 新增：用於計算真實時間差的變數
           this.lastLogicTime = 0; 
           this.accumulator = 0;
@@ -679,7 +686,21 @@
         this.fId = requestAnimationFrame(this.renderLoop);
       }
       stop() { clearInterval(this.logicInt); cancelAnimationFrame(this.fId); }
-      syncMoves(ms) { ms.forEach(m=>{if(!this.pMoves.has(m.id)&&m.p!==this.config.playerRole){this.pMoves.add(m.id); this.spawnLocal(m.type,this.config.playerRole==='player2'?GAME_WIDTH-m.x:m.x,this.config.playerRole==='player2'?GAME_HEIGHT-m.y:m.y,'enemy');}}); }
+      syncMoves(ms) { 
+          ms.forEach(m=>{
+              if(!this.pMoves.has(m.id)){
+                  this.pMoves.add(m.id); 
+                  const team = m.p === this.config.playerRole ? 'player' : 'enemy';
+                  const cx = this.config.playerRole === 'player2' ? GAME_WIDTH - m.x : m.x;
+                  const cy = this.config.playerRole === 'player2' ? GAME_HEIGHT - m.y : m.y;
+                  if (m.time) {
+                      this.pendingSpawns.push({ type: m.type, x: cx, y: cy, team: team, time: m.time });
+                  } else {
+                      this.spawnLocal(m.type, cx, cy, team);
+                  }
+              }
+          }); 
+      }
       spawnLocal(t,x,y,tm) {
         if(UNIT_TYPES[t].type==='spell') this.parts.push({x:GAME_WIDTH/2,y:tm==='player'?GAME_HEIGHT:0,tx:x,ty:y,vx:(x-GAME_WIDTH/2)/25,vy:(y-(tm==='player'?GAME_HEIGHT:0))/25,life:25,type:'fireball',dmg:UNIT_TYPES[t].dmg,radius:UNIT_TYPES[t].range,team:tm});
         else { this.ents.push(new Entity(x,y,tm,UNIT_TYPES[t])); this.parts.push({x,y,life:20,type:'ring',radius:1}); }
@@ -709,6 +730,15 @@
 
       // 將原先的 logicLoop 內容移到這裡，專門處理「每 1 個物理幀」該做的事
       tickLogic() {
+        const now = Date.now();
+        for(let i = this.pendingSpawns.length - 1; i >= 0; i--){
+            let ps = this.pendingSpawns[i];
+            if (now >= ps.time) {
+                this.spawnLocal(ps.type, ps.x, ps.y, ps.team);
+                this.pendingSpawns.splice(i, 1);
+            }
+        }
+
         this.logicTimer++;
         if (this.logicTimer % 60 === 0) {
             this.time--; 
@@ -740,7 +770,18 @@
           if(p.type==='arrow'){
               const d=Math.hypot(p.target.x-p.x,p.target.y-p.y);
               if(d<p.speed||p.target.dead){
-                  if(!p.target.dead){p.target.takeDamage(p.dmg,pt=>this.parts.push(pt));this.parts.push({x:p.target.x,y:p.target.y,life:10,type:'hit'});}
+                  // 新增：如果是有範圍傷害(炸彈兵)的投射物，觸發範圍爆炸
+                  if (p.aoeRadius) {
+                      this.ents.forEach(e => {
+                          if (e.team !== p.team && Math.hypot(e.x - p.x, e.y - p.y) <= p.aoeRadius) {
+                              e.takeDamage(p.dmg, pt => this.parts.push(pt));
+                          }
+                      });
+                      this.parts.push({x:p.x, y:p.y, life:20, type:'fire_explosion', radius: p.aoeRadius});
+                  } else if (!p.target.dead) {
+                      p.target.takeDamage(p.dmg,pt=>this.parts.push(pt));
+                      this.parts.push({x:p.target.x,y:p.target.y,life:10,type:'hit'});
+                  }
                   this.parts.splice(i,1);
               } else {
                   p.x+=((p.target.x-p.x)/d)*p.speed;p.y+=((p.target.y-p.y)/d)*p.speed;
@@ -774,7 +815,14 @@
         this.ents.sort((a,b)=>a.y-b.y).forEach(e=>e.draw(this.ctx));
         
         this.parts.forEach(p=>{
-          if(p.type==='arrow'){this.ctx.fillStyle='white';this.ctx.beginPath();this.ctx.arc(p.x,p.y,3,0,Math.PI*2);this.ctx.fill();}
+          if(p.type==='arrow'){
+              // 繪製：如果有爆炸範圍就畫成黑色炸彈，否則是白色弓箭
+              if(p.aoeRadius) {
+                  this.ctx.fillStyle='#222';this.ctx.beginPath();this.ctx.arc(p.x,p.y,6,0,Math.PI*2);this.ctx.fill();
+              } else {
+                  this.ctx.fillStyle='white';this.ctx.beginPath();this.ctx.arc(p.x,p.y,3,0,Math.PI*2);this.ctx.fill();
+              }
+          }
           else if(p.type==='hit'){this.ctx.fillStyle='orange';this.ctx.fillRect(p.x-5,p.y-5,10,10);}
           else if(p.type==='smoke'){this.ctx.fillStyle='rgba(150,150,150,0.6)';this.ctx.beginPath();this.ctx.arc(p.x,p.y,p.radius,0,Math.PI*2);this.ctx.fill();}
           else if(p.type==='cross'){this.ctx.strokeStyle='red';this.ctx.lineWidth=4;this.ctx.beginPath();this.ctx.moveTo(p.x-10,p.y-10);this.ctx.lineTo(p.x+10,p.y+10);this.ctx.moveTo(p.x+10,p.y-10);this.ctx.lineTo(p.x-10,p.y+10);this.ctx.stroke();}
