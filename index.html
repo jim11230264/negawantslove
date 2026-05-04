@@ -179,7 +179,7 @@
     const finalConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? JSON.parse(__firebase_config) : firebaseConfig;
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'royal-clash-pvp-v1';
 
-     let app, auth, db, currentUser;
+    let app, auth, db, currentUser;
     try {
       app = initializeApp(finalConfig);
       auth = getAuth(app);
